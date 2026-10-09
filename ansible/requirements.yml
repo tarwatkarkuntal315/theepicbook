@@ -1,4 +1,7 @@
 ---
 # The playbooks use only ansible.builtin modules, so no extra collections are required.
 # Add collections here if a role ever needs one; the pipeline installs exactly this list.
-collections: []
+collections:
+  # DRILL (DMI W10 A05): deliberately invalid dependency so the Prepare stage fails
+  # before any deployment. Revert this line to recover. Never merge to main.
+  - name: dmidrill.does_not_exist
