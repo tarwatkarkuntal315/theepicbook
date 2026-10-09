@@ -29,6 +29,9 @@ steps:
         ssh-keyscan -T 10 -t ed25519,ecdsa,rsa "$host" >> "$kh" 2>/dev/null
       done
       echo "Recorded $(wc -l < "$kh") host keys in a job-scoped known_hosts file"
-      echo "##vso[task.setvariable variable=sshArgs]--private-key $(sshKey.secureFilePath) -e ansible_ssh_common_args='-o UserKnownHostsFile=$kh -o StrictHostKeyChecking=yes'"
+      # Exposed to later steps as environment variables that Ansible reads natively,
+      # so no quoting is lost between steps.
+      echo "##vso[task.setvariable variable=ANSIBLE_PRIVATE_KEY_FILE]$(sshKey.secureFilePath)"
+      echo "##vso[task.setvariable variable=ANSIBLE_SSH_EXTRA_ARGS]-o UserKnownHostsFile=$kh -o StrictHostKeyChecking=yes"
     workingDirectory: $(ansibleDir)
     displayName: Restrict key permissions and record host keys

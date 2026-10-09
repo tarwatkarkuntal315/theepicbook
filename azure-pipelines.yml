@@ -67,7 +67,7 @@ stages:
               echo "Database secrets available (values not shown)."
               ansible-inventory --graph
               ansible-playbook site.yml verify.yml --syntax-check
-              ansible epicbook -m ansible.builtin.ping $(sshArgs)
+              ansible epicbook -m ansible.builtin.ping
             workingDirectory: $(ansibleDir)
             displayName: Validate handoff, secrets, syntax and SSH
             env:
@@ -88,7 +88,7 @@ stages:
 
           - bash: |
               set -euo pipefail
-              ansible-playbook site.yml $(sshArgs)
+              ansible-playbook site.yml
             workingDirectory: $(ansibleDir)
             displayName: ansible-playbook site.yml
             env:
@@ -110,7 +110,7 @@ stages:
 
           - bash: |
               set -euo pipefail
-              ansible-playbook verify.yml $(sshArgs) | tee $(Agent.TempDirectory)/verify.log
+              ansible-playbook verify.yml | tee $(Agent.TempDirectory)/verify.log
               # Belt and braces: the recap must show zero failed and zero unreachable hosts.
               if grep -E "unreachable=[1-9]|failed=[1-9]" $(Agent.TempDirectory)/verify.log; then exit 1; fi
               echo "PLAY RECAP check: every host failed=0 unreachable=0"
