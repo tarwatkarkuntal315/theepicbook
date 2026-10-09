@@ -1,0 +1,80 @@
+---
+- name: Backend checks
+  when: verify_tier == 'backend'
+  block:
+    - name: EpicBook service is active
+      ansible.builtin.command: systemctl is-active {{ app_name }}
+      register: svc
+      changed_when: false
+
+    - name: EpicBook is listening on its port
+      ansible.builtin.wait_for:
+        port: "{{ app_port }}"
+        timeout: 15
+
+    - name: Backend answers locally
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_port }}/"
+        status_code: 200
+
+    - name: Read table and row counts from MySQL
+      ansible.builtin.command: >-
+        mysql --defaults-extra-file={{ app_config_dir }}/mysql-client.cnf -N -B -e
+        "SELECT
+           (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{{ mysql_database }}'),
+           (SELECT COUNT(*) FROM `{{ mysql_database }}`.`Author`),
+           (SELECT COUNT(*) FROM `{{ mysql_database }}`.`Book`),
+           (SELECT COUNT(*) FROM `{{ mysql_database }}`.`Cart`)"
+      register: db_counts
+      changed_when: false
+
+    - name: Required tables and seed data exist
+      ansible.builtin.assert:
+        that:
+          - db_counts.stdout.split()[0] | int >= 5
+          - db_counts.stdout.split()[1] | int > 0
+          - db_counts.stdout.split()[2] | int > 0
+        quiet: true
+
+    - name: Backend summary
+      ansible.builtin.debug:
+        msg:
+          - "epicbook.service: {{ svc.stdout }}; listening on :{{ app_port }}"
+          - "MySQL {{ mysql_database }}: {{ db_counts.stdout.split()[0] }} tables, {{ db_counts.stdout.split()[1] }} authors, {{ db_counts.stdout.split()[2] }} books, {{ db_counts.stdout.split()[3] }} cart rows"
+
+- name: Frontend checks
+  when: verify_tier == 'frontend'
+  block:
+    - name: Nginx configuration is valid
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+    - name: Nginx is active
+      ansible.builtin.command: systemctl is-active nginx
+      register: nginx_state
+      changed_when: false
+
+    - name: Home page through Nginx shows the personalised footer
+      ansible.builtin.uri:
+        url: http://127.0.0.1/
+        return_content: true
+        status_code: 200
+      register: home
+
+    - name: Footer contains the owner's name
+      ansible.builtin.assert:
+        that: owner_name in home.content
+        quiet: true
+
+    - name: Public endpoint responds from the pipeline agent
+      ansible.builtin.uri:
+        url: "http://{{ app_public_ip }}/"
+        status_code: 200
+      delegate_to: localhost
+      become: false
+
+    - name: Frontend summary
+      ansible.builtin.debug:
+        msg:
+          - "nginx: {{ nginx_state.stdout }}; proxy upstream {{ backend_private_ip }}:{{ app_port }}"
+          - "http://{{ app_public_ip }}/ -> HTTP 200, page shows '{{ owner_name }}'"

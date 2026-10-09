@@ -1,0 +1,34 @@
+# Shared job setup: Ansible in a cached virtualenv, the SSH key from Secure Files,
+# and a job-scoped known_hosts file (host-key checking stays enabled).
+steps:
+  - bash: |
+      set -euo pipefail
+      venv="$(Agent.ToolsDirectory)/ansible-venv/$(ansibleCoreVersion)"
+      if [ ! -x "$venv/bin/ansible-playbook" ]; then
+        python3 -m venv "$venv"
+        "$venv/bin/pip" install --quiet --upgrade pip
+        "$venv/bin/pip" install --quiet "ansible-core~=$(ansibleCoreVersion).0"
+      fi
+      echo "##vso[task.prependpath]$venv/bin"
+      "$venv/bin/python" --version
+    displayName: Install Ansible $(ansibleCoreVersion) (virtualenv)
+
+  # The file is written to the agent's temp directory for this job only and removed afterwards.
+  - task: DownloadSecureFile@1
+    name: sshKey
+    displayName: Download SSH private key (Secure Files)
+    inputs:
+      secureFile: $(sshKeySecureFile)
+
+  - bash: |
+      set -euo pipefail
+      chmod 600 "$(sshKey.secureFilePath)"
+      kh="$(Agent.TempDirectory)/known_hosts"
+      : > "$kh"
+      for host in $(grep -oE 'ansible_host=[^ ]+' inventory.ini | cut -d= -f2); do
+        ssh-keyscan -T 10 -t ed25519,ecdsa,rsa "$host" >> "$kh" 2>/dev/null
+      done
+      echo "Recorded $(wc -l < "$kh") host keys in a job-scoped known_hosts file"
+      echo "##vso[task.setvariable variable=sshArgs]--private-key $(sshKey.secureFilePath) -e ansible_ssh_common_args='-o UserKnownHostsFile=$kh -o StrictHostKeyChecking=yes'"
+    workingDirectory: $(ansibleDir)
+    displayName: Restrict key permissions and record host keys

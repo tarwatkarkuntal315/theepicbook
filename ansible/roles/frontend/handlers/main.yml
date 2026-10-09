@@ -1,0 +1,12 @@
+---
+# Both handlers listen on one topic so the config is always tested before a reload.
+- name: Test Nginx configuration
+  ansible.builtin.command: nginx -t
+  changed_when: false
+  listen: Test and reload Nginx
+
+- name: Reload Nginx
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+  listen: Test and reload Nginx

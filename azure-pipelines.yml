@@ -1,0 +1,121 @@
+# Application pipeline for EpicBook (Ansible).
+# Prepare -> Validate -> Deploy -> Verify
+# Author: Kuntal Tarwatkar - DMI Week 10 Assignment 04
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    exclude:
+      - README.md
+      - "Installation & Configuration Guide.md"
+
+pool:
+  name: SelfHostedPool
+
+variables:
+  - group: epicbook-secrets            # mysql_admin_username, mysql_admin_password (secret)
+  - name: sshKeySecureFile
+    value: epicbook_id_rsa
+  - name: ansibleCoreVersion
+    value: "2.17"
+  - name: ansibleDir
+    value: $(Build.SourcesDirectory)/ansible
+
+stages:
+  - stage: Prepare
+    displayName: Prepare
+    jobs:
+      - job: Prepare
+        displayName: Ansible toolchain and SSH key
+        steps:
+          - checkout: self
+            clean: true
+
+          - template: pipeline/ansible-setup.yml
+
+          - bash: |
+              set -euo pipefail
+              ansible --version | head -1
+              ansible-galaxy collection install -r requirements.yml
+              # Proves the downloaded key is a usable private key without printing it.
+              ssh-keygen -y -f "$(sshKey.secureFilePath)" > /dev/null
+              echo "SSH key downloaded to the job's temp directory with mode $(stat -c %a "$(sshKey.secureFilePath)")"
+            workingDirectory: $(ansibleDir)
+            displayName: Verify Ansible, collections and key
+
+  - stage: Validate
+    displayName: Validate
+    dependsOn: Prepare
+    jobs:
+      - job: Validate
+        displayName: Inventory, syntax, secrets and connectivity
+        steps:
+          - checkout: self
+            clean: true
+
+          - template: pipeline/ansible-setup.yml
+
+          - bash: |
+              set -euo pipefail
+              if grep -rn "REPLACE_WITH" inventory.ini group_vars/; then
+                echo "##vso[task.logissue type=error]Terraform handoff values are missing"; exit 1
+              fi
+              echo "Handoff values present."
+              test -n "${MYSQL_ADMIN_USERNAME}" && test ${#MYSQL_ADMIN_PASSWORD} -ge 12
+              echo "Database secrets available (values not shown)."
+              ansible-inventory --graph
+              ansible-playbook site.yml verify.yml --syntax-check
+              ansible epicbook -m ansible.builtin.ping $(sshArgs)
+            workingDirectory: $(ansibleDir)
+            displayName: Validate handoff, secrets, syntax and SSH
+            env:
+              MYSQL_ADMIN_USERNAME: $(mysql_admin_username)
+              MYSQL_ADMIN_PASSWORD: $(mysql_admin_password)
+
+  - stage: Deploy
+    displayName: Configure and Deploy
+    dependsOn: Validate
+    jobs:
+      - job: Deploy
+        displayName: Run site.yml
+        steps:
+          - checkout: self
+            clean: true
+
+          - template: pipeline/ansible-setup.yml
+
+          - bash: |
+              set -euo pipefail
+              ansible-playbook site.yml $(sshArgs)
+            workingDirectory: $(ansibleDir)
+            displayName: ansible-playbook site.yml
+            env:
+              MYSQL_ADMIN_USERNAME: $(mysql_admin_username)
+              MYSQL_ADMIN_PASSWORD: $(mysql_admin_password)
+              APP_GIT_REF: $(Build.SourceVersion)
+
+  - stage: Verify
+    displayName: Verify
+    dependsOn: Deploy
+    jobs:
+      - job: Verify
+        displayName: Run verify.yml
+        steps:
+          - checkout: self
+            clean: true
+
+          - template: pipeline/ansible-setup.yml
+
+          - bash: |
+              set -euo pipefail
+              ansible-playbook verify.yml $(sshArgs) | tee $(Agent.TempDirectory)/verify.log
+              # Belt and braces: the recap must show zero failed and zero unreachable hosts.
+              if grep -E "unreachable=[1-9]|failed=[1-9]" $(Agent.TempDirectory)/verify.log; then exit 1; fi
+              echo "PLAY RECAP check: every host failed=0 unreachable=0"
+            workingDirectory: $(ansibleDir)
+            displayName: ansible-playbook verify.yml
+            env:
+              MYSQL_ADMIN_USERNAME: $(mysql_admin_username)
+              MYSQL_ADMIN_PASSWORD: $(mysql_admin_password)

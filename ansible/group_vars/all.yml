@@ -1,0 +1,27 @@
+---
+# ----- Manual handoff from infra-epicbook (non-sensitive) -----
+# app_public_ip: frontend public IP (also in inventory.ini)
+app_public_ip: REPLACE_WITH_app_public_ip
+# backend_private_ip: Nginx proxies application traffic here, never to the public management IP
+backend_private_ip: REPLACE_WITH_backend_private_ip
+# mysql_fqdn: private Azure Database for MySQL hostname
+mysql_fqdn: REPLACE_WITH_mysql_fqdn
+
+# ----- Application settings -----
+app_name: epicbook
+app_user: epicbook
+app_dir: /opt/epicbook/app
+app_config_dir: /etc/epicbook
+app_port: 8080
+app_repo_url: https://github.com/tarwatkarkuntal315/theepicbook.git
+# The pipeline deploys the exact commit it was triggered by.
+app_git_ref: "{{ lookup('ansible.builtin.env', 'APP_GIT_REF') | default('main', true) }}"
+owner_name: Kuntal Tarwatkar
+
+mysql_database: bookstore
+mysql_port: 3306
+
+# ----- Secrets: supplied at runtime from the epicbook-secrets variable group -----
+# They are read from environment variables mapped by the pipeline and never committed.
+mysql_admin_username: "{{ lookup('ansible.builtin.env', 'MYSQL_ADMIN_USERNAME') }}"
+mysql_admin_password: "{{ lookup('ansible.builtin.env', 'MYSQL_ADMIN_PASSWORD') }}"

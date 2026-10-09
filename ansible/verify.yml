@@ -1,0 +1,15 @@
+---
+# Post-deployment verification — prints only non-sensitive results.
+- name: Verify the backend service and database
+  hosts: backend
+  become: true
+  roles:
+    - role: verify
+      verify_tier: backend
+
+- name: Verify Nginx and the public endpoint
+  hosts: frontend
+  become: true
+  roles:
+    - role: verify
+      verify_tier: frontend

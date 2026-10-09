@@ -1,0 +1,46 @@
+---
+# EpicBook deployment — Kuntal Tarwatkar, DMI Week 10 Assignment 04
+# Order matters: the database is prepared before the backend service starts, because
+# Sequelize would otherwise create empty tables that block the schema import.
+
+- name: Check handoff values and secrets before touching any server
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Ensure Terraform handoff values were filled in
+      ansible.builtin.assert:
+        that:
+          - "'REPLACE_WITH' not in hostvars['epicbook-frontend'].ansible_host"
+          - "'REPLACE_WITH' not in hostvars['epicbook-backend'].ansible_host"
+          - "'REPLACE_WITH' not in backend_private_ip"
+          - "'REPLACE_WITH' not in mysql_fqdn"
+        fail_msg: Copy the infra pipeline outputs into inventory.ini and group_vars/all.yml first.
+        quiet: true
+
+    - name: Ensure database secrets are available (values are not shown)
+      ansible.builtin.assert:
+        that:
+          - mysql_admin_username | length > 0
+          - mysql_admin_password | length >= 12
+        fail_msg: MYSQL_ADMIN_USERNAME / MYSQL_ADMIN_PASSWORD are missing from the pipeline environment.
+        quiet: true
+      no_log: true
+
+- name: Common baseline
+  hosts: epicbook
+  become: true
+  roles:
+    - common
+
+- name: Database preparation and EpicBook backend
+  hosts: backend
+  become: true
+  roles:
+    - database
+    - backend
+
+- name: Nginx reverse proxy on the frontend
+  hosts: frontend
+  become: true
+  roles:
+    - frontend

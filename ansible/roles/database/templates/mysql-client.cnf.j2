@@ -1,0 +1,7 @@
+# Managed by Ansible — root-only MySQL client options for EpicBook database tasks.
+[client]
+host={{ mysql_fqdn }}
+port={{ mysql_port }}
+user={{ mysql_admin_username }}
+password={{ mysql_admin_password }}
+ssl-mode=REQUIRED

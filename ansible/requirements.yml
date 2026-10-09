@@ -1,0 +1,4 @@
+---
+# The playbooks use only ansible.builtin modules, so no extra collections are required.
+# Add collections here if a role ever needs one; the pipeline installs exactly this list.
+collections: []

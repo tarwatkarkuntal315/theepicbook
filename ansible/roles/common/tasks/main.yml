@@ -1,0 +1,25 @@
+---
+- name: Update the apt package cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install baseline packages
+  ansible.builtin.apt:
+    name:
+      - curl
+      - git
+      - ca-certificates
+    state: present
+
+- name: Find world-writable files or directories under /opt and /etc/epicbook
+  ansible.builtin.command: find /opt /etc/epicbook -xdev -perm -o+w ! -type l -print
+  register: world_writable
+  changed_when: false
+  failed_when: false
+
+- name: Fail if anything EpicBook-related is world-writable
+  ansible.builtin.assert:
+    that: world_writable.stdout | trim | length == 0
+    fail_msg: "World-writable paths found: {{ world_writable.stdout_lines }}"
+    quiet: true

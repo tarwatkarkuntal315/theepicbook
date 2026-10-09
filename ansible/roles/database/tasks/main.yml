@@ -1,0 +1,101 @@
+---
+# Runs on the backend VM: the only tier allowed to reach MySQL on 3306.
+- name: Install the MySQL client
+  ansible.builtin.apt:
+    name: mysql-client
+    state: present
+
+- name: Create the EpicBook system user (owns the app; reads only its own env file)
+  ansible.builtin.user:
+    name: "{{ app_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: /opt/epicbook
+    create_home: true
+
+- name: Create the protected configuration directory
+  ansible.builtin.file:
+    path: "{{ app_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ app_user }}"
+    mode: "0750"
+
+# Credentials go into a root-only option file so they never appear on a command line or in logs.
+- name: Write the MySQL client option file (root only)
+  ansible.builtin.template:
+    src: mysql-client.cnf.j2
+    dest: "{{ app_config_dir }}/mysql-client.cnf"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Confirm the private MySQL FQDN resolves inside the VNet
+  ansible.builtin.command: getent hosts {{ mysql_fqdn }}
+  register: mysql_dns
+  changed_when: false
+
+- name: Confirm port 3306 is reachable over private networking
+  ansible.builtin.wait_for:
+    host: "{{ mysql_fqdn }}"
+    port: "{{ mysql_port }}"
+    timeout: 30
+
+- name: Create the bookstore database if it does not exist
+  ansible.builtin.command: >-
+    mysql --defaults-extra-file={{ app_config_dir }}/mysql-client.cnf
+    -e "CREATE DATABASE IF NOT EXISTS `{{ mysql_database }}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+  changed_when: false
+
+- name: Copy schema and seed files to the backend
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../db/{{ item }}"
+    dest: "{{ app_config_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0640"
+  loop:
+    - BuyTheBook_Schema.sql
+    - author_seed.sql
+    - books_seed.sql
+
+- name: Check whether the schema already exists
+  ansible.builtin.command: >-
+    mysql --defaults-extra-file={{ app_config_dir }}/mysql-client.cnf -N -B
+    -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='{{ mysql_database }}' AND LOWER(table_name) IN ('author','book','cart')"
+  register: schema_tables
+  changed_when: false
+
+- name: Import the EpicBook schema (first run only)
+  ansible.builtin.shell: >-
+    mysql --defaults-extra-file={{ app_config_dir }}/mysql-client.cnf
+    < {{ app_config_dir }}/BuyTheBook_Schema.sql
+  when: schema_tables.stdout | int == 0
+
+- name: Count existing authors and books
+  ansible.builtin.command: >-
+    mysql --defaults-extra-file={{ app_config_dir }}/mysql-client.cnf -N -B
+    -e "SELECT (SELECT COUNT(*) FROM `{{ mysql_database }}`.`Author`), (SELECT COUNT(*) FROM `{{ mysql_database }}`.`Book`)"
+  register: seed_counts
+  changed_when: false
+
+# The seed files are plain INSERTs, so each one is imported only into an empty table.
+- name: Import author seed data (only when the Author table is empty)
+  ansible.builtin.shell: >-
+    mysql --defaults-extra-file={{ app_config_dir }}/mysql-client.cnf
+    < {{ app_config_dir }}/author_seed.sql
+  when: seed_counts.stdout.split()[0] | int == 0
+
+- name: Import book seed data (only when the Book table is empty)
+  ansible.builtin.shell: >-
+    mysql --defaults-extra-file={{ app_config_dir }}/mysql-client.cnf
+    < {{ app_config_dir }}/books_seed.sql
+  when: seed_counts.stdout.split()[1] | int == 0
+
+- name: Report database state (no credentials)
+  ansible.builtin.debug:
+    msg: >-
+      {{ mysql_fqdn }} resolves to {{ mysql_dns.stdout.split()[0] }};
+      schema {{ 'created' if schema_tables.stdout | int == 0 else 'already present' }};
+      seed {{ 'imported' if seed_counts.stdout.split()[1] | int == 0 else 'skipped (' ~ seed_counts.stdout.split()[1] ~ ' books already present)' }}

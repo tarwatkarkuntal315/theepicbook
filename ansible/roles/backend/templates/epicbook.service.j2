@@ -1,0 +1,21 @@
+# Managed by Ansible — EpicBook backend (Node.js) on port {{ app_port }}
+[Unit]
+Description=EpicBook bookstore backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ app_user }}
+Group={{ app_user }}
+WorkingDirectory={{ app_dir }}
+EnvironmentFile={{ app_config_dir }}/epicbook.env
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

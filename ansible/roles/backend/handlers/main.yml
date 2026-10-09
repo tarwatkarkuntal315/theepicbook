@@ -1,0 +1,9 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart EpicBook
+  ansible.builtin.systemd_service:
+    name: "{{ app_name }}"
+    state: restarted

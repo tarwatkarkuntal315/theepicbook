@@ -1,0 +1,85 @@
+---
+- name: Install Node.js and npm (Ubuntu 24.04 ships Node.js 18, compatible with EpicBook)
+  ansible.builtin.apt:
+    name:
+      - nodejs
+      - npm
+    state: present
+
+- name: Create the EpicBook system user
+  ansible.builtin.user:
+    name: "{{ app_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: /opt/epicbook
+    create_home: true
+
+- name: Restrict the application home directory
+  ansible.builtin.file:
+    path: /opt/epicbook
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0755"
+
+- name: Deploy the EpicBook code at the pipeline's commit
+  ansible.builtin.git:
+    repo: "{{ app_repo_url }}"
+    dest: "{{ app_dir }}"
+    version: "{{ app_git_ref }}"
+    force: true
+  become_user: "{{ app_user }}"
+  register: app_code
+  notify: Restart EpicBook
+
+- name: Check whether dependencies are installed
+  ansible.builtin.stat:
+    path: "{{ app_dir }}/node_modules"
+  register: node_modules
+
+- name: Install dependencies from package-lock.json
+  ansible.builtin.command: npm ci --omit=dev --no-audit --no-fund
+  args:
+    chdir: "{{ app_dir }}"
+  become_user: "{{ app_user }}"
+  environment:
+    HOME: /opt/epicbook
+  when: app_code.changed or not node_modules.stat.exists
+  notify: Restart EpicBook
+
+# NODE_ENV=production makes EpicBook read JAWSDB_URL; the file is readable only by root and the service user.
+- name: Write the EpicBook environment file (database URL)
+  ansible.builtin.template:
+    src: epicbook.env.j2
+    dest: "{{ app_config_dir }}/epicbook.env"
+    owner: root
+    group: "{{ app_user }}"
+    mode: "0640"
+  no_log: true
+  notify: Restart EpicBook
+
+- name: Install the systemd unit
+  ansible.builtin.template:
+    src: epicbook.service.j2
+    dest: /etc/systemd/system/{{ app_name }}.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart EpicBook
+
+- name: Enable and start EpicBook
+  ansible.builtin.systemd_service:
+    name: "{{ app_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply pending restarts now
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for EpicBook to listen on its port
+  ansible.builtin.wait_for:
+    port: "{{ app_port }}"
+    timeout: 60

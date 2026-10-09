@@ -1,2 +1,17 @@
 node_modules
 .DS_Store
+
+# Deployment secrets and local artefacts — never commit
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+epicbook_id_rsa*
+*.vault
+vault-pass*
+.env
+*.env
+ansible/*.retry
+ansible/.ansible/
+ansible/inventory.local.ini
+ansible/group_vars/*secret*
