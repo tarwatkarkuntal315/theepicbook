@@ -1,11 +1,11 @@
 ---
 # ----- Manual handoff from infra-epicbook (non-sensitive) -----
 # app_public_ip: frontend public IP (also in inventory.ini)
-app_public_ip: REPLACE_WITH_app_public_ip
+app_public_ip: 20.219.64.253
 # backend_private_ip: Nginx proxies application traffic here, never to the public management IP
-backend_private_ip: REPLACE_WITH_backend_private_ip
+backend_private_ip: 10.20.2.4
 # mysql_fqdn: private Azure Database for MySQL hostname
-mysql_fqdn: REPLACE_WITH_mysql_fqdn
+mysql_fqdn: epicbook-mysql-b0ecl.mysql.database.azure.com
 
 # ----- Application settings -----
 app_name: epicbook
